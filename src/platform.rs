@@ -339,7 +339,7 @@ pub mod sys {
         use mach2::kern_return::KERN_SUCCESS;
         use mach2::traps::mach_task_self;
         use mach2::vm::{mach_vm_allocate, mach_vm_protect};
-        use mach2::vm_prot::{VM_PROT_NONE, VM_PROT_READ, VM_PROT_WRITE};
+        use mach2::vm_prot::VM_PROT_NONE;
         use mach2::vm_statistics::VM_FLAGS_ANYWHERE;
         use mach2::vm_types::{mach_vm_address_t, mach_vm_size_t};
 

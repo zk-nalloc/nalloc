@@ -43,9 +43,9 @@ zk-nalloc = { version = "0.2.0", features = ["fallback"] }
 | Feature | Description | Default |
 |---------|-------------|---------|
 | `fallback` | Fall back to system allocator when arena exhausted | ✅ |
-| `huge-pages` | Linux 2MB/1GB huge page support | ❌ |
-| `guard-pages` | Guard pages at arena boundaries | ❌ |
-| `mlock` | Lock witness memory to prevent swapping | ❌ |
+| `huge-pages` | Linux 2MB/1GB huge page support | Optional |
+| `guard-pages` | Guard pages at arena boundaries (Linux) | Optional |
+| `mlock` | Lock witness memory to prevent swapping | Optional |
 
 ---
 

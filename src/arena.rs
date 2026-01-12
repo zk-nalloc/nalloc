@@ -37,6 +37,7 @@ pub struct ArenaManager {
     scratch_size: usize,
     /// Flag to indicate this manager uses guard pages
     #[cfg(feature = "guard-pages")]
+    #[allow(dead_code)]
     has_guard_pages: bool,
 }
 
@@ -349,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "guard-pages")]
+    #[cfg(all(target_os = "linux", feature = "guard-pages"))]
     fn test_guard_pages_creation() {
         let manager =
             ArenaManager::with_guard_pages(1024 * 1024, 1024 * 1024, 1024 * 1024).unwrap();

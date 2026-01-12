@@ -616,7 +616,8 @@ mod tests {
 
         // Should work even before initialization
         let stats = alloc.stats_or_default();
-        assert!(stats.total_capacity() >= 0);
+        // Just verify it doesn't panic
+        let _ = stats.total_capacity();
     }
 
     #[test]
