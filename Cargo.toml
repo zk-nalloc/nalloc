@@ -1,0 +1,32 @@
+[package]
+name = "zk-nalloc"
+version = "0.2.0"
+edition = "2021"
+authors = ["nzengi <howyaniii@gmail.com>"]
+description = "High-performance, deterministic memory allocator optimized for Zero-Knowledge Proof (ZKP) systems and cryptographic provers."
+license = "GPL-3.0-only"
+readme = "README.md"
+repository = "https://github.com/nzengi/nalloc"
+keywords = ["cryptography", "zkp", "allocator", "performance", "memory"]
+categories = ["memory-management", "cryptography"]
+
+[features]
+default = ["fallback"]
+fallback = []           # Fall back to system allocator when arena exhausted
+huge-pages = []         # Linux 2MB/1GB huge page support
+guard-pages = []        # Guard pages at arena boundaries for overflow protection
+mlock = []              # Lock witness memory to prevent swapping
+
+[dependencies]
+rustix = { version = "0.38", features = ["mm"] }
+libc = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+mach2 = "0.4"
+
+[[bench]]
+name = "alloc_benchmark"
+harness = false
