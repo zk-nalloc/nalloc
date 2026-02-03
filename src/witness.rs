@@ -36,14 +36,17 @@ impl WitnessArena {
         debug_assert!(size > 0);
         debug_assert!(align > 0);
 
+        // Issue #15: Read is_recycled BEFORE calling alloc to prevent race condition.
+        // If we read after alloc, another thread could call secure_wipe() between
+        // our allocation and the is_recycled check.
+        let was_recycled = self.inner.is_recycled();
+
         let ptr = self.inner.alloc(size, align);
-        if !ptr.is_null() {
+        if !ptr.is_null() && was_recycled {
             // Only zero if this memory has been recycled.
             // Fresh mmap'd memory is already zero (OS guarantee on Linux/macOS/Windows).
-            if self.inner.is_recycled() {
-                unsafe {
-                    std::ptr::write_bytes(ptr, 0, size);
-                }
+            unsafe {
+                std::ptr::write_bytes(ptr, 0, size);
             }
         }
         ptr

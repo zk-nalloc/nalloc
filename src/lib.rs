@@ -221,8 +221,8 @@ impl NAlloc {
             }
         }
 
-        // Another thread is initializing - spin wait
-        loop {
+        // Another thread is initializing - spin wait with timeout (Issue #2)
+        for _ in 0..MAX_CAS_RETRIES {
             std::hint::spin_loop();
             let state = self.init_state.load(Ordering::Acquire);
 
@@ -236,6 +236,12 @@ impl NAlloc {
                 _ => continue,
             }
         }
+
+        // Issue #2: Timeout - initialization is stuck or taking too long
+        // Fall back to system allocator rather than spinning forever
+        #[cfg(debug_assertions)]
+        eprintln!("[nalloc] Warning: Arena initialization timed out, using system allocator");
+        null_mut()
     }
 
     /// Check if NAlloc is operating in fallback mode (using system allocator).
@@ -452,13 +458,19 @@ unsafe impl GlobalAlloc for NAlloc {
             return;
         }
 
+        // Issue #1: Check if this allocation came from fallback
+        // Arena allocations are within known address ranges; fallback allocations are not
+        if let Some(arenas) = self.get_arenas() {
+            let ptr_addr = ptr as usize;
+            if !arenas.contains_address(ptr_addr) {
+                // This was a fallback allocation - free it via system allocator
+                System.dealloc(ptr, layout);
+                return;
+            }
+        }
+
         // For arena allocations, deallocation is a no-op.
         // Memory is reclaimed by calling reset() on the arena.
-        // However, if fallback feature is enabled and this was a fallback
-        // allocation, it would have been allocated from System.
-        // Currently we don't track which allocations are from fallback,
-        // so we can't distinguish. For now, treat as no-op.
-        // TODO: Track fallback allocations for proper deallocation
     }
 
     #[inline(always)]

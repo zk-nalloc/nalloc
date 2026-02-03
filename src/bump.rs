@@ -6,7 +6,7 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::ptr::NonNull;
-use std::sync::atomic::{compiler_fence, AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{fence, AtomicBool, AtomicUsize, Ordering};
 
 use crate::config::SECURE_WIPE_PATTERN;
 
@@ -73,14 +73,23 @@ impl BumpAlloc {
     /// With the `fallback` feature, falls back to system allocator.
     #[inline(always)]
     pub fn alloc(&self, size: usize, align: usize) -> *mut u8 {
-        debug_assert!(size > 0);
-        debug_assert!(align > 0);
-        debug_assert!(align.is_power_of_two());
+        // Runtime validation (Issue #6): prevent memory corruption from invalid inputs
+        if size == 0 || align == 0 || !align.is_power_of_two() {
+            return std::ptr::null_mut();
+        }
 
         loop {
             let current = self.cursor.load(Ordering::Relaxed);
-            let aligned = (current + align - 1) & !(align - 1);
-            let next = aligned + size;
+
+            // Issue #7: Use checked arithmetic to prevent integer overflow
+            let aligned = match current.checked_add(align - 1) {
+                Some(v) => v & !(align - 1),
+                None => return self.handle_exhaustion(size, align),
+            };
+            let next = match aligned.checked_add(size) {
+                Some(v) => v,
+                None => return self.handle_exhaustion(size, align),
+            };
 
             if next > self.limit.as_ptr() as usize {
                 // Arena exhausted
@@ -198,8 +207,11 @@ impl BumpAlloc {
         // This ensures the memory is actually zeroed even if it's never read again.
         Self::volatile_memset(base, SECURE_WIPE_PATTERN, size);
 
-        // Compiler fence to ensure the wipe completes before any subsequent operations.
-        compiler_fence(Ordering::SeqCst);
+        // Issue #5: Full memory barrier for multi-threaded safety.
+        // compiler_fence only prevents compiler reordering, not CPU reordering.
+        // Using atomic fence ensures other threads observe the zeroed memory
+        // before seeing the reset cursor.
+        fence(Ordering::SeqCst);
 
         self.reset();
     }
@@ -209,23 +221,23 @@ impl BumpAlloc {
     /// This is critical for cryptographic security - we need to guarantee
     /// that sensitive data is actually erased from memory.
     #[inline(never)]
+    #[allow(unreachable_code)] // Platform-specific code paths return early, making fallback unreachable on some platforms
     unsafe fn volatile_memset(ptr: *mut u8, value: u8, len: usize) {
-        // Method 1: Use platform-specific secure zeroing where available
+        // Method 1: Use platform-specific secure zeroing where available (for value == 0)
         #[cfg(any(target_os = "linux", target_os = "android"))]
-        {
+        if value == 0 {
             // explicit_bzero is guaranteed not to be optimized away
             extern "C" {
                 fn explicit_bzero(s: *mut libc::c_void, n: libc::size_t);
             }
-            if value == 0 {
-                explicit_bzero(ptr as *mut libc::c_void, len);
-                return;
-            }
+            explicit_bzero(ptr as *mut libc::c_void, len);
+            return;
         }
 
         #[cfg(target_vendor = "apple")]
         {
             // memset_s is guaranteed not to be optimized away (C11)
+            // Note: memset_s supports non-zero values
             extern "C" {
                 fn memset_s(
                     s: *mut libc::c_void,
@@ -239,50 +251,42 @@ impl BumpAlloc {
         }
 
         #[cfg(target_os = "windows")]
-        {
+        if value == 0 {
             // RtlSecureZeroMemory is guaranteed not to be optimized away
             extern "system" {
                 fn RtlSecureZeroMemory(ptr: *mut u8, len: usize);
             }
-            if value == 0 {
-                RtlSecureZeroMemory(ptr, len);
-                return;
-            }
+            RtlSecureZeroMemory(ptr, len);
+            return;
         }
 
-        // Fallback: Volatile write loop (works everywhere, used when platform-specific not available)
-        #[cfg(not(any(
-            target_os = "linux",
-            target_os = "android",
-            target_vendor = "apple",
-            target_os = "windows"
-        )))]
-        {
-            // Using usize-sized writes for better performance
-            let ptr_usize = ptr as *mut usize;
-            let pattern_usize = if value == 0 {
-                0usize
-            } else {
-                let mut p = 0usize;
-                for i in 0..std::mem::size_of::<usize>() {
-                    p |= (value as usize) << (i * 8);
-                }
-                p
-            };
-
-            let full_words = len / std::mem::size_of::<usize>();
-            let remainder = len % std::mem::size_of::<usize>();
-
-            // Write full usize words
-            for i in 0..full_words {
-                std::ptr::write_volatile(ptr_usize.add(i), pattern_usize);
+        // Issue #4: Generic volatile write loop for:
+        // - Non-zero values on Linux/Android/Windows (platform APIs only handle zero)
+        // - All values on other platforms
+        // Using usize-sized writes for better performance
+        let ptr_usize = ptr as *mut usize;
+        let pattern_usize = if value == 0 {
+            0usize
+        } else {
+            let mut p = 0usize;
+            for i in 0..std::mem::size_of::<usize>() {
+                p |= (value as usize) << (i * 8);
             }
+            p
+        };
 
-            // Write remaining bytes
-            let remainder_ptr = ptr.add(full_words * std::mem::size_of::<usize>());
-            for i in 0..remainder {
-                std::ptr::write_volatile(remainder_ptr.add(i), value);
-            }
+        let full_words = len / std::mem::size_of::<usize>();
+        let remainder = len % std::mem::size_of::<usize>();
+
+        // Write full usize words
+        for i in 0..full_words {
+            std::ptr::write_volatile(ptr_usize.add(i), pattern_usize);
+        }
+
+        // Write remaining bytes
+        let remainder_ptr = ptr.add(full_words * std::mem::size_of::<usize>());
+        for i in 0..remainder {
+            std::ptr::write_volatile(remainder_ptr.add(i), value);
         }
     }
 

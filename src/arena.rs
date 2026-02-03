@@ -139,6 +139,10 @@ impl ArenaManager {
     ///
     /// # Safety
     /// This will invalidate all memory previously allocated from these arenas.
+    /// The caller must ensure:
+    /// - No other thread is concurrently allocating from these arenas
+    /// - No references to arena memory exist
+    /// - No concurrent access to arena-allocated memory occurs during or after reset
     pub unsafe fn reset_all(&self) {
         self.witness.secure_reset();
         self.polynomial.reset();
@@ -179,6 +183,36 @@ impl ArenaManager {
             Arc::strong_count(&self.polynomial),
             Arc::strong_count(&self.scratch),
         )
+    }
+
+    /// Check if an address falls within any of the arena memory ranges.
+    ///
+    /// Used by Issue #1 fix to distinguish arena allocations from fallback allocations.
+    /// Returns `true` if the address is within witness, polynomial, or scratch arena.
+    #[inline]
+    pub fn contains_address(&self, addr: usize) -> bool {
+        // Check witness arena range
+        let witness_start = self.witness_ptr as usize;
+        let witness_end = witness_start + self.witness_size;
+        if addr >= witness_start && addr < witness_end {
+            return true;
+        }
+
+        // Check polynomial arena range
+        let poly_start = self.poly_ptr as usize;
+        let poly_end = poly_start + self.poly_size;
+        if addr >= poly_start && addr < poly_end {
+            return true;
+        }
+
+        // Check scratch arena range
+        let scratch_start = self.scratch_ptr as usize;
+        let scratch_end = scratch_start + self.scratch_size;
+        if addr >= scratch_start && addr < scratch_end {
+            return true;
+        }
+
+        false
     }
 }
 
