@@ -162,6 +162,10 @@ impl BumpAlloc {
     }
 
     /// Get the total bytes allocated via fallback (only with `fallback` feature).
+    ///
+    /// **Note (Issue #9)**: This tracks the *requested* allocation size, not the actual
+    /// size allocated by the system allocator (which may be larger due to alignment
+    /// and internal bookkeeping). Use this for monitoring, not precise accounting.
     #[cfg(feature = "fallback")]
     #[inline]
     pub fn fallback_bytes(&self) -> usize {
@@ -172,8 +176,14 @@ impl BumpAlloc {
     ///
     /// # Safety
     /// All previously allocated memory becomes invalid after this call.
-    /// Note: Fallback allocations are NOT freed by reset - they must be
-    /// individually deallocated or will be freed when the program exits.
+    ///
+    /// # Warning (Issue #10)
+    /// **Fallback allocations are NOT freed by reset.** When arena exhaustion triggers
+    /// fallback to the system allocator (with `fallback` feature), those allocations
+    /// must be individually deallocated via `GlobalAlloc::dealloc`. If using NAlloc
+    /// as the global allocator, this happens automatically when the memory is dropped.
+    /// However, if using arenas directly, be aware that reset only reclaims arena memory,
+    /// not system allocator memory.
     #[inline]
     pub unsafe fn reset(&self) {
         self.cursor

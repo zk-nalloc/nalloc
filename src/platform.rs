@@ -150,7 +150,14 @@ pub mod sys {
                 ProtFlags::READ | ProtFlags::WRITE,
                 MapFlags::PRIVATE | MapFlags::NORESERVE,
             ) {
-                Ok(ptr) => Ok(ptr as *mut u8),
+                Ok(ptr) => {
+                    // Issue #8: Explicit null check for safety
+                    let ptr = ptr as *mut u8;
+                    if ptr.is_null() {
+                        return Err(AllocFailed::out_of_memory(size));
+                    }
+                    Ok(ptr)
+                }
                 Err(_) => Err(AllocFailed::out_of_memory(size)),
             }
         }
@@ -304,7 +311,12 @@ pub mod sys {
         let retval = unsafe { mach_vm_allocate(task, &mut address, vm_size, VM_FLAGS_ANYWHERE) };
 
         if retval == KERN_SUCCESS {
-            Ok(address as *mut u8)
+            // Issue #8: Explicit null check for safety
+            let ptr = address as *mut u8;
+            if ptr.is_null() {
+                return Err(AllocFailed::out_of_memory(size));
+            }
+            Ok(ptr)
         } else {
             Err(AllocFailed::with_code(size, retval))
         }
