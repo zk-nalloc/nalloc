@@ -1,6 +1,6 @@
 [package]
 name = "zk-nalloc"
-version = "0.2.0"
+version = "0.2.2"
 edition = "2021"
 rust-version = "1.70"
 authors = ["nzengi <howyaniii@gmail.com>"]
@@ -24,6 +24,11 @@ fallback = []           # Fall back to system allocator when arena exhausted
 huge-pages = []         # Linux 2MB/1GB huge page support
 guard-pages = []        # Guard pages at arena boundaries for overflow protection
 mlock = []              # Lock witness memory to prevent swapping
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
 
 [dependencies]
 rustix = { version = "0.38", features = ["mm"] }

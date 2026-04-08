@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.2] - 2026-04-08
+
+### Fixed
+- Add `[package.metadata.docs.rs]` to Cargo.toml so docs.rs builds with
+  all features enabled and correct rustdoc flags (`--cfg docsrs`).
+  Targets: `x86_64-unknown-linux-gnu`, `x86_64-apple-darwin`,
+  `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`.
+- `is_recycled()` memory ordering: `Relaxed` → `Acquire` to establish a
+  proper happens-before edge with the `Release` store in `reset()`.
+
+### Security
+- Document TOCTOU limitation in `WitnessArena::alloc` and `secure_wipe`.
+- Document that `static NAlloc` does not run `Drop` — witness data is NOT
+  automatically wiped on program exit in the global-allocator use-case.
+  Users must call `secure_wipe()` explicitly before prover shutdown.
+- Document why `ArenaManager::Drop` ref-count check is safe despite the
+  apparent TOCTOU between check and dealloc.
+
 ## [Unreleased]
 
 ### Added
