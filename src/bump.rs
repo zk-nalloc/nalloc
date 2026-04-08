@@ -149,9 +149,15 @@ impl BumpAlloc {
     }
 
     /// Check if this arena has been recycled (reset after initial use).
+    ///
+    /// Uses `Acquire` ordering so that all memory writes performed by the
+    /// thread that called `reset()` (in particular the volatile zeroing in
+    /// `secure_reset`) are visible to the caller before any subsequent reads
+    /// from arena memory.  A `Relaxed` load would break the happens-before
+    /// chain with the `Release` store in `reset()`.
     #[inline]
     pub fn is_recycled(&self) -> bool {
-        self.is_recycled.load(Ordering::Relaxed)
+        self.is_recycled.load(Ordering::Acquire)
     }
 
     /// Get the number of fallback allocations (only with `fallback` feature).

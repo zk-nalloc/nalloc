@@ -252,6 +252,20 @@ impl ArenaStats {
 }
 
 impl Drop for ArenaManager {
+    /// # Safety Note: ref-count check is not atomic with deallocation
+    ///
+    /// The ref-count read and the subsequent deallocation are two separate
+    /// operations with no lock between them.  In theory, another thread could
+    /// clone an `Arc<BumpAlloc>` handle between the check and the dealloc,
+    /// causing a use-after-free.
+    ///
+    /// **In practice this cannot occur** because `ArenaManager::drop` is only
+    /// reachable when `NAlloc` is dropped (`&mut self` ⇒ exclusive access).
+    /// At that point no thread can obtain new `WitnessArena` / `PolynomialArena`
+    /// handles from this `NAlloc`, so the ref counts are stable.
+    ///
+    /// The check therefore serves as a debug-mode invariant assertion, not as
+    /// a concurrent-safety mechanism.
     fn drop(&mut self) {
         // SAFETY CHECK: Verify we are the sole owner of all arenas
         // If not, we cannot safely deallocate the memory as it may still be in use

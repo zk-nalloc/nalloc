@@ -5,6 +5,16 @@
 //!
 //! - **Conditional zero on allocation**: Only zeroes recycled memory.
 //! - **Secure wipe on reset**: Zeroes all memory before recycling using volatile writes.
+//!
+//! # Security Limitations
+//!
+//! - **Concurrent `secure_wipe()` is unsafe.** The caller must ensure no other
+//!   thread is allocating from this arena when `secure_wipe()` is called.
+//! - **Stack/register copies are not covered.** Values copied out of arena memory
+//!   into local Rust variables are not erased by `secure_wipe()`. Use `zeroize`
+//!   for stack-allocated secrets.
+//! - **`static NAlloc` does not wipe on program exit.** Rust does not run `Drop`
+//!   for `static` items. Call `secure_wipe()` explicitly before the prover exits.
 
 use crate::bump::BumpAlloc;
 use std::sync::Arc;
@@ -32,14 +42,36 @@ impl WitnessArena {
     ///
     /// This optimization avoids redundant zeroing on first use while
     /// maintaining security guarantees for recycled memory.
+    ///
+    /// # Security Notes
+    ///
+    /// **Concurrent `secure_wipe()` is unsafe.** Calling `secure_wipe()` while
+    /// another thread may still be allocating from this arena is undefined
+    /// behaviour: the wipe resets the arena cursor to base, invalidating all
+    /// outstanding pointers. The caller is responsible for ensuring all arena
+    /// users have finished before calling `secure_wipe()`.
+    ///
+    /// **Stack and register copies are not covered.** When caller code copies
+    /// witness values into local variables (e.g. `let x = *ptr;`), those copies
+    /// live in CPU registers and on the stack. Wiping the arena does **not**
+    /// erase those copies. Use a crate such as `zeroize` for stack-allocated
+    /// secrets, and prefer keeping field elements in arena memory for as long
+    /// as possible.
     #[inline]
     pub fn alloc(&self, size: usize, align: usize) -> *mut u8 {
         debug_assert!(size > 0);
         debug_assert!(align > 0);
 
-        // Issue #15: Read is_recycled BEFORE calling alloc to prevent race condition.
-        // If we read after alloc, another thread could call secure_wipe() between
-        // our allocation and the is_recycled check.
+        // Read is_recycled with Acquire ordering BEFORE calling alloc.
+        //
+        // Acquire pairs with the Release store in BumpAlloc::reset(), establishing
+        // a happens-before edge: if we observe is_recycled=true we are guaranteed
+        // to see all writes (including the volatile zeroing) done by the resetting
+        // thread before we return memory to the caller.
+        //
+        // We read BEFORE alloc so that the check and the allocation are ordered:
+        // if a reset races with this alloc (which is a caller bug — see Safety above),
+        // we conservatively zero the returned pointer rather than skipping zeroing.
         let was_recycled = self.inner.is_recycled();
 
         let ptr = self.inner.alloc(size, align);
@@ -76,11 +108,30 @@ impl WitnessArena {
 
     /// Securely wipe all witness data and reset the arena.
     ///
-    /// Uses platform-specific secure zeroing (volatile writes) to ensure
-    /// the data is actually erased and cannot be recovered.
+    /// Uses platform-specific secure zeroing (`explicit_bzero` / `memset_s` /
+    /// `RtlSecureZeroMemory` / volatile-write fallback) followed by a
+    /// `SeqCst` fence to ensure the zeroing is visible across threads before
+    /// the cursor is reset.
     ///
     /// # Safety
-    /// All previously allocated witness memory becomes invalid.
+    ///
+    /// 1. **All previously allocated witness memory becomes invalid.** Any
+    ///    pointer obtained from `alloc` or `alloc_zeroed` on this arena must
+    ///    not be read or written after this call.
+    ///
+    /// 2. **Must be called only when no other thread is allocating.** This
+    ///    method is not safe to call concurrently with `alloc` on the same
+    ///    arena. Use external synchronization (e.g. a barrier or channel) to
+    ///    ensure all allocating threads have finished before calling this.
+    ///
+    /// 3. **Does not cover stack/register copies.** Values copied out of arena
+    ///    memory into local variables are not erased. Use `zeroize` or
+    ///    explicit `write_volatile` on stack buffers for those.
+    ///
+    /// 4. **`static NAlloc` does not call this automatically on program exit.**
+    ///    When `NAlloc` is used as `#[global_allocator] static ALLOC: NAlloc`,
+    ///    Rust does not run `Drop` for statics. You must call
+    ///    `alloc.witness().secure_wipe()` explicitly before the prover exits.
     #[inline]
     pub unsafe fn secure_wipe(&self) {
         self.inner.secure_reset();

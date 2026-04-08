@@ -107,6 +107,30 @@ enum InitState {
 /// If arena initialization fails (e.g., out of memory), NAlloc gracefully
 /// falls back to the system allocator rather than panicking. This ensures
 /// your application continues to function even under memory pressure.
+///
+/// # Security: `static` Usage and Witness Wipe
+///
+/// When used as a `#[global_allocator]` static, **Rust does not run `Drop`
+/// for statics**.  The `impl Drop for NAlloc` therefore only fires for
+/// non-static instances (e.g. `NAlloc::try_new()` in tests or scoped provers).
+///
+/// **For the `static` use-case you must wipe witness memory manually before
+/// the prover exits:**
+///
+/// ```rust,no_run
+/// use zk_nalloc::NAlloc;
+///
+/// #[global_allocator]
+/// static ALLOC: NAlloc = NAlloc::new();
+///
+/// fn shutdown() {
+///     // Must be called explicitly — Drop will NOT run for a static.
+///     unsafe { ALLOC.witness().secure_wipe(); }
+/// }
+/// ```
+///
+/// Failure to do so leaves witness data in RAM until the OS reclaims the
+/// pages, which may be observable by other processes on the same host.
 #[must_use]
 pub struct NAlloc {
     /// Pointer to the ArenaManager (null until initialized)
