@@ -4,6 +4,7 @@
 //! a pointer. This module provides a thread-safe, atomic bump allocator
 //! optimized for ZK prover workloads with fallback support.
 
+#[cfg(feature = "fallback")]
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::ptr::NonNull;
 use std::sync::atomic::{fence, AtomicBool, AtomicUsize, Ordering};

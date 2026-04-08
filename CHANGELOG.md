@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document why `ArenaManager::Drop` ref-count check is safe despite the
   apparent TOCTOU between check and dealloc.
 
+## [0.2.6] - 2026-04-08
+
+### Fixed
+- Gate `GlobalAlloc`, `Layout`, and `System` imports in `src/bump.rs` behind
+  `#[cfg(feature = "fallback")]` — these symbols are only used inside
+  `#[cfg(feature = "fallback")]` blocks, so without `--no-default-features`
+  the compiler emitted `unused-imports` errors under `-D warnings`.
+
 ## [0.2.5] - 2026-04-08
 
 ### Added
