@@ -154,7 +154,6 @@ impl NAlloc {
     ///
     /// Returns an error if arena allocation fails, allowing the caller
     /// to handle the failure gracefully.
-    #[must_use]
     pub fn try_new() -> Result<Self, AllocFailed> {
         let nalloc = Self::new();
         nalloc.try_init()?;
@@ -528,7 +527,6 @@ unsafe impl GlobalAlloc for NAlloc {
             if !arenas.contains_address(ptr_addr) {
                 // This was a fallback allocation - free it via system allocator
                 System.dealloc(ptr, layout);
-                return;
             }
         }
 

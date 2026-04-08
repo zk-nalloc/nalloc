@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document why `ArenaManager::Drop` ref-count check is safe despite the
   apparent TOCTOU between check and dealloc.
 
-## [Unreleased]
+## [0.2.5] - 2026-04-08
 
 ### Added
 - `impl Drop for NAlloc`: `NAlloc` now properly frees the heap-allocated
@@ -38,10 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WitnessArena::alloc` and `alloc_zeroed` now uses volatile word-sized writes
   to prevent dead-store elimination, matching the security guarantee of
   `secure_reset`.
-- `#[must_use]` attributes on `NAlloc`, `NAlloc::try_new`, `is_initialized`,
-  `is_fallback_mode`, `try_witness`, `try_polynomial`, `try_scratch`, `stats`,
-  and `stats_or_default` — the compiler now warns if callers discard these
-  values.
+- `#[must_use]` attributes on `NAlloc`, `is_initialized`, `is_fallback_mode`,
+  `try_witness`, `try_polynomial`, `try_scratch`, `stats`, and `stats_or_default`
+  — the compiler now warns if callers discard these values.
 - `.github/workflows/ci.yml`: GitHub Actions CI pipeline with:
   - Test matrix: stable + nightly × Linux + macOS
   - Feature variants: default, no-default-features, all-features (Linux)
@@ -58,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Large Alloc (1MB)`) leaked memory on every iteration because there was no
   corresponding `dealloc`. Each bench closure now pairs `System.alloc` with
   `System.dealloc`.
+- Removed redundant `#[must_use]` from `NAlloc::try_new` — `Result<T, E>` is
+  already `#[must_use]`, causing a `clippy::double_must_use` error under
+  `-D warnings`.
+- Removed unnecessary `return` statement in `GlobalAlloc::dealloc` that
+  triggered `clippy::needless_return` under `-D warnings`.
 
 ---
 
