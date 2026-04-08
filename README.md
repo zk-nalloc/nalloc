@@ -22,7 +22,7 @@ General-purpose allocators (malloc, jemalloc) are designed for long-lived, heter
 
 ---
 
-## v0.2.0 Features
+## v0.2.3 Features
 
 ### 🛡️ Industrial-Grade Improvements
 
@@ -40,7 +40,7 @@ General-purpose allocators (malloc, jemalloc) are designed for long-lived, heter
 
 ```toml
 [dependencies]
-zk-nalloc = { version = "0.2.0", features = ["fallback"] }
+zk-nalloc = { version = "0.2.3", features = ["fallback"] }
 ```
 
 | Feature | Description | Default |
@@ -130,7 +130,7 @@ println!("Fallback bytes:  {} bytes", stats.total_fallback_bytes());
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-zk-nalloc = "0.2.0"
+zk-nalloc = "0.2.3"
 ```
 
 In your `main.rs` or `lib.rs`:
