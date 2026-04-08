@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use zk_nalloc::NAlloc;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::time::Duration;
+use zk_nalloc::NAlloc;
 
 // We use the Global Allocator API for fairness
 static N_ALLOC: NAlloc = NAlloc::new();
