@@ -2,13 +2,21 @@
 name = "zk-nalloc"
 version = "0.2.0"
 edition = "2021"
+rust-version = "1.70"
 authors = ["nzengi <howyaniii@gmail.com>"]
 description = "High-performance, deterministic memory allocator optimized for Zero-Knowledge Proof (ZKP) systems and cryptographic provers."
-license = "GPL-3.0-only"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/nzengi/nalloc"
+repository = "https://github.com/zk-nalloc/nalloc"
+homepage = "https://github.com/zk-nalloc/nalloc"
+documentation = "https://docs.rs/zk-nalloc"
 keywords = ["cryptography", "zkp", "allocator", "performance", "memory"]
 categories = ["memory-management", "cryptography"]
+exclude = [
+    ".github/",
+    "benches/",
+    "tests/",
+]
 
 [features]
 default = ["fallback"]

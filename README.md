@@ -4,18 +4,20 @@ A high-performance, deterministic, and security-hardened memory allocator specif
 
 [![Crates.io](https://img.shields.io/crates/v/zk-nalloc.svg)](https://crates.io/crates/zk-nalloc)
 [![Documentation](https://docs.rs/zk-nalloc/badge.svg)](https://docs.rs/zk-nalloc)
-[![License](https://img.shields.io/crates/l/zk-nalloc.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+[![CI](https://github.com/zk-nalloc/nalloc/actions/workflows/ci.yml/badge.svg)](https://github.com/zk-nalloc/nalloc/actions)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/nzengi?label=Sponsor&logo=githubsponsors)](https://github.com/sponsors/nzengi)
 
 ## Why nalloc?
 
-General-purpose allocators (malloc, jemalloc) are designed for long-lived, heterogeneous workloads. ZK provers, however, exhibit extreme memory patterns: massive short-lived vectors, sensitive witness data, and performance-critical FFT/NTT operations. 
+General-purpose allocators (malloc, jemalloc) are designed for long-lived, heterogeneous workloads. ZK provers, however, exhibit extreme memory patterns: massive short-lived vectors, sensitive witness data, and performance-critical FFT/NTT operations.
 
 `nalloc` addresses these unique requirements:
 
 - **Performance**: O(1) allocation via Atomic Bump Allocation.
 - **Cache-Friendliness**: Guaranteed 64-byte alignment (AVX-512/SIMD optimal) for polynomials.
 - **Security**: Hardened volatile wiping of witness data to prevent leakage.
-- **Framework-Agnostic**: Works with any ZK system - no external dependencies.
+- **Framework-Agnostic**: Works with any ZK system — no external ZK dependencies.
 - **Production-Ready**: Panic-free error handling with graceful fallback.
 
 ---
@@ -26,8 +28,9 @@ General-purpose allocators (malloc, jemalloc) are designed for long-lived, heter
 
 | Feature | Description |
 |---------|-------------|
-| **Drop Safety** | Prevents use-after-free via Arc reference counting |
+| **Drop Safety** | `NAlloc` properly frees arena memory on drop (no leaks) |
 | **Panic-Free** | Gracefully falls back to system allocator on errors |
+| **Volatile Zeroing** | Recycled witness memory zeroed with `write_volatile` (DSE-safe) |
 | **Fallback Allocator** | Continues working when arena exhausted |
 | **Huge Pages** | 2MB/1GB huge page support (Linux) |
 | **Guard Pages** | Buffer overflow protection at arena boundaries |
@@ -72,7 +75,7 @@ zk-nalloc = { version = "0.2.0", features = ["fallback"] }
 
 | Arena | Purpose | Optimization | Security |
 |-------|---------|--------------|-----------|
-| **Witness** | Secret inputs / Witnesses | Zero-on-recycled-alloc | **Secure Wipe** (Volatile) |
+| **Witness** | Secret inputs / Witnesses | Zero-on-recycled-alloc (volatile) | **Secure Wipe** (platform-specific) |
 | **Polynomial** | FFT / NTT Vectors | 64-byte & Page Alignment | Isolated from scratch |
 | **Scratch** | Temp computation space | High-speed bump allocation | O(1) Batch Reset |
 
@@ -85,7 +88,9 @@ Witness data is handled with extreme caution. The `secure_wipe()` method uses pl
 - **Linux**: `explicit_bzero`
 - **macOS**: `memset_s`
 - **Windows**: `RtlSecureZeroMemory`
-- **Fallback**: Atomic volatile write loops with memory fences.
+- **Fallback**: Volatile write loops with `SeqCst` memory fences.
+
+Recycled witness memory is also zeroed with volatile writes in `WitnessArena::alloc`, preventing Dead-Store Elimination from silently skipping the zero.
 
 ### 2. Framework-Agnostic Design
 `nalloc` has **zero external ZK dependencies**. It provides pure memory primitives that any proving system can utilize. Lock-free `AtomicPtr` initialization prevents recursive allocation deadlocks during prover startup.
@@ -111,10 +116,10 @@ if alloc.is_fallback_mode() {
 Easily track your circuit's memory footprint:
 ```rust
 let stats = alloc.stats().expect("Stats available");
-println!("Witness used: {} bytes", stats.witness_used);
+println!("Witness used:    {} bytes", stats.witness_used);
 println!("Polynomial used: {} bytes", stats.polynomial_used);
 #[cfg(feature = "fallback")]
-println!("Fallback bytes: {} bytes", stats.total_fallback_bytes());
+println!("Fallback bytes:  {} bytes", stats.total_fallback_bytes());
 ```
 
 ---
@@ -148,13 +153,13 @@ use zk_nalloc::NAlloc;
 
 fn prove() {
     let nalloc = NAlloc::new();
-    
+
     // 1. Allocate witness data
     let witness = nalloc.witness();
     let secret = witness.alloc(1024, 64);
-    
+
     // 2. Compute proof with your preferred ZK framework...
-    
+
     // 3. Securely erase traces
     unsafe { witness.secure_wipe(); }
 }
@@ -184,7 +189,7 @@ let manager = ArenaManager::with_guard_pages(
 
 ---
 
-## Platform Support & Verification
+## Platform Support
 
 `nalloc` provides cross-platform abstractions for low-level memory management:
 - **macOS**: `mach_vm_allocate` / `mach_vm_deallocate`
@@ -203,12 +208,28 @@ let manager = ArenaManager::with_guard_pages(
 
 ---
 
-## License
+## Support the Project
 
-Licensed under the GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE) for details.
+`zk-nalloc` is MIT/Apache-2.0 licensed and free for everyone to use. If it saves you time or improves your prover's performance, consider supporting ongoing development:
+
+- ⭐ **Star the repo** — helps other ZK developers discover the library
+- 💖 **[GitHub Sponsors](https://github.com/sponsors/nzengi)** — fund new features, platform ports, and maintenance
+- 🐛 **[Open an issue](https://github.com/zk-nalloc/nalloc/issues)** — bug reports and feature requests are always welcome
+- 🔧 **Submit a PR** — contributions for new platform backends, benchmarks, or integrations are very welcome
+
+### ZK Ecosystem Grants
+
+If you work at a ZK protocol foundation and rely on `nalloc`, consider sponsoring development through your ecosystem grant program (Ethereum Foundation, StarkWare, Risc0, Aztec, zkSync, etc.).
 
 ---
 
-## Contributing
+## License
 
-Designed with ❤️ for the ZK community. Contributions for Huge Page support or new platform backends are welcome.
+Licensed under either of:
+
+- **MIT License** ([LICENSE-MIT](LICENSE-MIT))
+- **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE))
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project shall be dual-licensed as above, without any additional terms or conditions.

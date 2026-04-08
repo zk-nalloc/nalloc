@@ -16,7 +16,12 @@ fn bench_allocations(c: &mut Criterion) {
 
     group.throughput(Throughput::Elements(1));
     group.bench_function("Small Alloc (32 bytes) - System", |b| {
-        b.iter(|| unsafe { System.alloc(layout_small) })
+        b.iter(|| unsafe {
+            let ptr = System.alloc(layout_small);
+            // Dealloc to avoid unbounded memory growth during benchmarks.
+            System.dealloc(ptr, layout_small);
+            ptr
+        })
     });
     group.bench_function("Small Alloc (32 bytes) - nalloc", |b| {
         b.iter(|| unsafe { N_ALLOC.alloc(layout_small) })
@@ -28,7 +33,12 @@ fn bench_allocations(c: &mut Criterion) {
 
     group.throughput(Throughput::Bytes(1024 * 1024));
     group.bench_function("Large Alloc (1MB) - System", |b| {
-        b.iter(|| unsafe { System.alloc(layout_large) })
+        b.iter(|| unsafe {
+            let ptr = System.alloc(layout_large);
+            // Dealloc to avoid unbounded memory growth during benchmarks.
+            System.dealloc(ptr, layout_large);
+            ptr
+        })
     });
     group.bench_function("Large Alloc (1MB) - nalloc", |b| {
         b.iter(|| unsafe { N_ALLOC.alloc(layout_large) })

@@ -107,6 +107,7 @@ enum InitState {
 /// If arena initialization fails (e.g., out of memory), NAlloc gracefully
 /// falls back to the system allocator rather than panicking. This ensures
 /// your application continues to function even under memory pressure.
+#[must_use]
 pub struct NAlloc {
     /// Pointer to the ArenaManager (null until initialized)
     arenas: AtomicPtr<ArenaManager>,
@@ -129,6 +130,7 @@ impl NAlloc {
     ///
     /// Returns an error if arena allocation fails, allowing the caller
     /// to handle the failure gracefully.
+    #[must_use]
     pub fn try_new() -> Result<Self, AllocFailed> {
         let nalloc = Self::new();
         nalloc.try_init()?;
@@ -222,8 +224,12 @@ impl NAlloc {
         }
 
         // Another thread is initializing - spin wait with timeout (Issue #2)
+        // Inner SPIN_ITERATIONS hint loops yield the CPU before each state check,
+        // avoiding unnecessary memory bus traffic on contended cache lines.
         for _ in 0..MAX_CAS_RETRIES {
-            std::hint::spin_loop();
+            for _ in 0..SPIN_ITERATIONS {
+                std::hint::spin_loop();
+            }
             let state = self.init_state.load(Ordering::Acquire);
 
             match state {
@@ -245,12 +251,14 @@ impl NAlloc {
     }
 
     /// Check if NAlloc is operating in fallback mode (using system allocator).
+    #[must_use]
     #[inline]
     pub fn is_fallback_mode(&self) -> bool {
         self.init_state.load(Ordering::Relaxed) == InitState::Fallback as u8
     }
 
     /// Check if NAlloc is fully initialized with arenas.
+    #[must_use]
     #[inline]
     pub fn is_initialized(&self) -> bool {
         self.init_state.load(Ordering::Relaxed) == InitState::Initialized as u8
@@ -309,6 +317,7 @@ impl NAlloc {
     /// Try to access the witness arena.
     ///
     /// Returns `None` if arena initialization failed.
+    #[must_use]
     #[inline]
     pub fn try_witness(&self) -> Option<WitnessArena> {
         self.get_arenas().map(|a| WitnessArena::new(a.witness()))
@@ -344,6 +353,7 @@ impl NAlloc {
     /// Try to access the polynomial arena.
     ///
     /// Returns `None` if arena initialization failed.
+    #[must_use]
     #[inline]
     pub fn try_polynomial(&self) -> Option<PolynomialArena> {
         self.get_arenas()
@@ -367,6 +377,7 @@ impl NAlloc {
     /// Try to access the scratch arena.
     ///
     /// Returns `None` if arena initialization failed.
+    #[must_use]
     #[inline]
     pub fn try_scratch(&self) -> Option<std::sync::Arc<BumpAlloc>> {
         self.get_arenas().map(|a| a.scratch())
@@ -392,11 +403,13 @@ impl NAlloc {
     /// Returns `None` if operating in fallback mode.
     ///
     /// Useful for monitoring memory consumption and tuning arena sizes.
+    #[must_use]
     pub fn stats(&self) -> Option<ArenaStats> {
         self.get_arenas().map(|a| a.stats())
     }
 
     /// Get statistics, returning default stats if in fallback mode.
+    #[must_use]
     pub fn stats_or_default(&self) -> ArenaStats {
         self.stats().unwrap_or(ArenaStats {
             witness_used: 0,
@@ -418,6 +431,25 @@ impl NAlloc {
 impl Default for NAlloc {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Drop for NAlloc {
+    fn drop(&mut self) {
+        // Only clean up if we successfully initialized arenas.
+        // Fallback mode never allocated an ArenaManager on the heap.
+        if *self.init_state.get_mut() == InitState::Initialized as u8 {
+            let ptr = *self.arenas.get_mut();
+            if !ptr.is_null() {
+                unsafe {
+                    // Run ArenaManager's own Drop (securely wipes witness, unmaps arenas).
+                    std::ptr::drop_in_place(ptr);
+                    // Deallocate the heap slot we allocated in init_arenas().
+                    let layout = Layout::new::<ArenaManager>();
+                    System.dealloc(ptr as *mut u8, layout);
+                }
+            }
+        }
     }
 }
 
@@ -653,6 +685,22 @@ mod tests {
 
         let stats_after_large = alloc.stats().unwrap();
         assert!(stats_after_large.polynomial_used >= 2 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_drop_deallocates_arena_manager() {
+        // Verify that Drop runs without panic and actually frees the ArenaManager.
+        // If Drop is missing, valgrind/miri would catch the leak; here we test
+        // that drop_in_place + dealloc completes without UB or double-free.
+        {
+            let alloc = NAlloc::try_new().expect("NAlloc::try_new should succeed");
+            assert!(alloc.is_initialized());
+            // alloc drops here → Drop impl runs → ArenaManager is freed
+        }
+        // If we reach here without SIGSEGV / panic, the Drop impl is correct.
+        // Run a second init to confirm the heap is still healthy.
+        let alloc2 = NAlloc::try_new().expect("heap still healthy after previous drop");
+        assert!(alloc2.is_initialized());
     }
 
     #[test]

@@ -27,7 +27,8 @@ impl WitnessArena {
     ///
     /// The returned memory is **zero-initialized** for security:
     /// - Fresh memory from `mmap` is already zeroed by the OS.
-    /// - Recycled memory (after `secure_wipe`) is explicitly zeroed here.
+    /// - Recycled memory (after `secure_wipe`) is explicitly zeroed with volatile
+    ///   writes to prevent dead-store elimination by the compiler.
     ///
     /// This optimization avoids redundant zeroing on first use while
     /// maintaining security guarantees for recycled memory.
@@ -45,8 +46,11 @@ impl WitnessArena {
         if !ptr.is_null() && was_recycled {
             // Only zero if this memory has been recycled.
             // Fresh mmap'd memory is already zero (OS guarantee on Linux/macOS/Windows).
+            //
+            // Use volatile writes so the compiler cannot elide the zeroing via
+            // dead-store elimination — the same reason secure_reset() uses volatile.
             unsafe {
-                std::ptr::write_bytes(ptr, 0, size);
+                volatile_zero(ptr, size);
             }
         }
         ptr
@@ -64,7 +68,7 @@ impl WitnessArena {
         let ptr = self.inner.alloc(size, align);
         if !ptr.is_null() {
             unsafe {
-                std::ptr::write_bytes(ptr, 0, size);
+                volatile_zero(ptr, size);
             }
         }
         ptr
@@ -104,6 +108,28 @@ impl WitnessArena {
     #[inline]
     pub fn is_recycled(&self) -> bool {
         self.inner.is_recycled()
+    }
+}
+
+/// Zero `len` bytes at `ptr` using volatile word-sized writes.
+///
+/// Volatile writes cannot be removed by the compiler's dead-store elimination
+/// pass, which is critical when zeroing memory that will be re-used but whose
+/// previous values are no longer read (from the compiler's perspective).
+#[inline(never)]
+unsafe fn volatile_zero(ptr: *mut u8, len: usize) {
+    let word_size = std::mem::size_of::<usize>();
+    let full_words = len / word_size;
+    let remainder = len % word_size;
+
+    let ptr_usize = ptr as *mut usize;
+    for i in 0..full_words {
+        std::ptr::write_volatile(ptr_usize.add(i), 0usize);
+    }
+
+    let tail = ptr.add(full_words * word_size);
+    for i in 0..remainder {
+        std::ptr::write_volatile(tail.add(i), 0u8);
     }
 }
 
