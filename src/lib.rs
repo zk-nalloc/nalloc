@@ -247,12 +247,19 @@ impl NAlloc {
             }
         }
 
-        // Another thread is initializing - spin wait with timeout (Issue #2)
-        // Inner SPIN_ITERATIONS hint loops yield the CPU before each state check,
-        // avoiding unnecessary memory bus traffic on contended cache lines.
-        for _ in 0..MAX_CAS_RETRIES {
+        // Another thread is initializing - spin wait with timeout (Issue #2).
+        // We mix hint::spin_loop() (PAUSE/YIELD on x86) with periodic
+        // thread::yield_now() so the OS scheduler can run the thread that is
+        // actually performing the initialisation.  Without the yield, on
+        // 2-CPU CI runners all waiting threads can starve the init thread.
+        for i in 0..MAX_CAS_RETRIES {
             for _ in 0..SPIN_ITERATIONS {
                 std::hint::spin_loop();
+            }
+            // Every 10 outer iterations hand control back to the OS scheduler
+            // so the initialising thread gets CPU time.
+            if i % 10 == 9 {
+                std::thread::yield_now();
             }
             let state = self.init_state.load(Ordering::Acquire);
 

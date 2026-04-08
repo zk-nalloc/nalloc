@@ -67,9 +67,13 @@ pub const SECURE_WIPE_PATTERN: u8 = 0x00;
 // ============================================================================
 
 /// Maximum number of CAS retries before giving up (for extreme contention).
-pub const MAX_CAS_RETRIES: usize = 1000;
+/// On CI runners with 2 CPUs and 8 concurrent threads the initialising thread
+/// can be starved, so we allow many more iterations. Each outer loop now also
+/// calls `thread::yield_now()` every 10 iterations so the OS can schedule the
+/// thread that is actually doing the initialisation work.
+pub const MAX_CAS_RETRIES: usize = 50_000;
 
-/// Spin loop hint iterations before yielding.
+/// Spin loop hint iterations before each state check.
 pub const SPIN_ITERATIONS: usize = 32;
 
 // ============================================================================
